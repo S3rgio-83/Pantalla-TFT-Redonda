@@ -1,4 +1,4 @@
-
+#include <Wire.h>
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_GC9A01A.h"
@@ -97,11 +97,14 @@ struct Coordinate
 };
 
 bool radarOn = false;
+bool stopRequested = false;
+bool sequenceStarted = false;
 
-void setup()
-{
+void setup(){  
+  Wire.begin(8); // Inicializa la comunicación I2C con dirección 8
+  Wire.onReceive(receiveEvent); // Configura la función para manejar los datos recibidos
   Serial.begin(9600);
-
+  
   tft.setFont(&Aurebesh8pt7b);
   tft.setTextSize(1);
   tft.begin();
@@ -111,34 +114,45 @@ void setup()
 }
 
 void loop(void) {
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    if (command == "LON") {
-      radarOn = true;
-    } else if (command == "LOFF") {
-      radarOn = false;
-      stopSequence(); // Limpiar la pantalla cuando se apaga el radar
+  if (radarOn) {
+    if (!sequenceStarted) {
+      startSequence();
+      sequenceStarted = true;
+    }
+    continueSequence();
+  } else {
+    // Detén la secuencia y apaga la pantalla si se solicitó
+    if (stopRequested) {
+      stopSequence();
+      sequenceStarted = false;  // Reinicia la bandera de inicio de secuencia
+      stopRequested = false;    // Reinicia la bandera de detención  
     }
   }
 }
 
 void startSequence() {
-  if (radarOn) {  
+//  if (radarOn) {  
     // Muestra la imagen en la pantalla
     tft.drawBitmap(1, 2, star_wars, star_wars_width, star_wars_height, ILI9341_YELLOW);
-    delay(4000);
-
+    delay(2000);
     // Limpia y saca la animación
     clearScreen();
     bootTacticalDisplay();
-    blinkObject(random(1, 4), GC9A01A_WHITE, objectsColor[random(objectColorCount)], 4000, 300);
-    blinkArc(arcs[random(nbrOfArcs)], COLOR_TACTICAL_BLUE, objectsColor[random(objectColorCount)], 4000, 300);
-    blinkTacticalText("Alert!", 1, 10000, 5);
-    writeRadarOn(70, 500, GC9A01A_ORANGE);
-    blinkRadarOn(200, 2000);
-    // Agregar otras animaciones o acciones aquí
-  }
+//    blinkObject(random(1, 4), GC9A01A_WHITE, objectsColor[random(objectColorCount)], 4000, 300);
+//    blinkArc(arcs[random(nbrOfArcs)], COLOR_TACTICAL_BLUE, objectsColor[random(objectColorCount)], 4000, 300);
+//    blinkTacticalText("Alert!", 1, 10000, 5);
+//    writeRadarOn(70, 500, GC9A01A_ORANGE);
+//    blinkRadarOn(200, 2000);
+//  }
+}
+
+void continueSequence() {
+  // Continúa ejecutando estas funciones en bucle hasta que se reciba "LOFF"
+  blinkObject(random(1, 4), GC9A01A_WHITE, objectsColor[random(objectColorCount)], 4000, 300);
+  blinkArc(arcs[random(nbrOfArcs)], COLOR_TACTICAL_BLUE, objectsColor[random(objectColorCount)], 4000, 300);
+  blinkTacticalText("Alert!", 1, 10000, 5);
+  writeRadarOn(70, 500, GC9A01A_ORANGE);
+  blinkRadarOn(200, 2000);
 }
 
 void stopSequence() {
@@ -395,4 +409,23 @@ Timer initTimer(unsigned long durationMS)
 boolean timeNotExpired(Timer time)
 {
   return millis() - time.time_start < time.durationMs;
+}
+
+void receiveEvent(int bytes) {
+  String inputString = "";
+
+  while (Wire.available()) {
+    char inChar = (char)Wire.read();
+    inputString += inChar;
+  }
+  inputString.trim();
+  if (inputString == "LON") {
+    radarOn = true;
+    stopRequested = false;  // Reinicia la bandera de detención
+    Serial.println("Recibido: Encender Mini Pantalla");    
+  } else if (inputString == "LOFF") {
+    radarOn = false;
+    stopRequested = true;  // Solicita detener la secuencia
+    Serial.println("Recibido: Apagar Mini Pantalla");
+  }
 }
